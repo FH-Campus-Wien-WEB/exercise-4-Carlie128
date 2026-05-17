@@ -84,23 +84,26 @@ function loadMovies(genre) {
 }
 
 function addMovie(imdbID) {
-  fetch(`/movies/${imdbID}`, { method: 'PUT' })
+  return fetch(`/movies/${imdbID}`, { method: 'PUT' })
     .then(response => {
       if (response.status === 201) {
-        // Task 2.2: Make sure to remove the added movie from the search results to avoid
-        // giving the user the option to add it again.
-    
+        // Movie created
         loadMovies();
         updateGenres();
       } else if (response.status === 200) {
+        // Already existed
         alert(messages.movieAlreadyInCollection);
+      } else if (response.status === 401) {
+        alert(messages.loginFailed);
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
+      return response.status;
     })
     .catch(error => {
       console.error('Failed to add movie:', error);
       alert(messages.addMovieFailed);
+      throw error;
     });
 }
 
@@ -133,9 +136,37 @@ function searchMovies(query) {
       const resultsDiv = document.getElementById("searchResults");
       resultsDiv.innerHTML = '';
 
-      // Task 2.2: Render the results returned from the server. Make sure to
-      // include an "Add" button for each result that calls `addMovie(imdbID)` when clicked.
-      // There is a second part to this task, in `addMovie`
+      if (!results || results.length === 0) {
+        new ElementBuilder("p").text(messages.noResultsFound).appendTo(resultsDiv);
+        return;
+      }
+
+      results.forEach(movie => {
+        const container = document.createElement('div');
+        container.className = 'search-result';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = `${movie.Title} (${movie.Year || 'n/a'})`;
+        titleSpan.style.marginRight = '10px';
+
+        const addBtn = document.createElement('button');
+        addBtn.textContent = 'Add';
+        addBtn.addEventListener('click', () => {
+          addMovie(movie.imdbID)
+            .then(status => {
+              if (status === 201 || status === 200) {
+                container.remove();
+              }
+            })
+            .catch(() => {
+              // addMovie already alerts on error
+            });
+        });
+
+        container.appendChild(titleSpan);
+        container.appendChild(addBtn);
+        resultsDiv.appendChild(container);
+      });
 
     })
     .catch(error => {
@@ -165,9 +196,12 @@ window.onload = function () {
   function renderUserGreeting() {
     const greetingElement = document.getElementById('userGreeting');
     if (currentSession) {
-      // Task 1.2: Render a user greeting to `#userGreeting` 
-      // using `firstName`, `lastName`, and the server-provided
-      // login timestamp.
+      const firstName = currentSession.firstName || '';
+      const lastName = currentSession.lastName || '';
+      const loginTime = currentSession.loginTime ? new Date(currentSession.loginTime) : new Date();
+      const dateStr = loginTime.toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
+      const timeStr = loginTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      greetingElement.textContent = `Hi ${firstName} ${lastName}, du hast dich am ${dateStr} um ${timeStr} angemeldet.`;
     } else {
       greetingElement.textContent = messages.loggedOutGreeting;
     }
@@ -212,9 +246,36 @@ window.onload = function () {
     e.preventDefault();
     const formData = new FormData(e.target);
 
-    // Task 1.1: Implement the login submit flow to call `POST /login` 
-    // with username and password, handle errors, save the response 
-    // into `currentSession`, then call `updateUI()` and `loadMovies()`.
+    const username = formData.get('username');
+    const password = formData.get('password');
+
+    fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    })
+      .then(response => {
+        if (!response.ok) {
+          if (response.status === 401) {
+            alert(messages.loginFailed);
+            return null;
+          }
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data) {
+          currentSession = data;
+          document.getElementById('loginDialog').close();
+          updateUI();
+          loadMovies();
+        }
+      })
+      .catch(error => {
+        console.error('Login failed:', error);
+        alert(messages.loginFailed);
+      });
 
   });
 
